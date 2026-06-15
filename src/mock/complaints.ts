@@ -1,0 +1,52 @@
+import type { Complaint } from "../types";
+
+export const complaints: Complaint[] = [
+  {
+    id: "c001",
+    projectId: "p002",
+    clientId: "u001",
+    reason: "部分批次的车辆目标存在大量遗漏，遮挡标注未按规范执行，严重影响模型训练质量",
+    status: "processing",
+    responsibleParty: "u004",
+    creditAdjustment: -5,
+    createdAt: "2026-06-10T14:00:00Z",
+  },
+  {
+    id: "c002",
+    projectId: "p003",
+    clientId: "u007",
+    reason: "语音转写错误率过高，专业术语转写不准确，意图分类与实际内容不符",
+    status: "pending",
+    createdAt: "2026-06-13T10:30:00Z",
+  },
+  {
+    id: "c003",
+    projectId: "p004",
+    clientId: "u007",
+    reason: "行为识别标注时间节点偏差较大，多个行为片段起止时间标注不准确",
+    status: "resolved",
+    responsibleParty: "u009",
+    creditAdjustment: -3,
+    createdAt: "2026-05-28T09:00:00Z",
+    resolvedAt: "2026-06-05T16:00:00Z",
+  },
+  {
+    id: "c004",
+    projectId: "p001",
+    clientId: "u001",
+    reason: "情感分析标注标准不统一，同一类型评论标注结果不一致",
+    status: "resolved",
+    responsibleParty: "u003",
+    creditAdjustment: -2,
+    createdAt: "2026-04-20T11:00:00Z",
+    resolvedAt: "2026-04-28T14:30:00Z",
+  },
+  {
+    id: "c005",
+    projectId: "p007",
+    clientId: "u001",
+    reason: "会议录音摘要遗漏关键决策信息，发言人标注错误率偏高",
+    status: "processing",
+    createdAt: "2026-06-11T15:00:00Z",
+  },
+];
