@@ -17,10 +17,12 @@ import {
 import { useTaskStore } from "@/store/taskStore"
 import { useNotificationStore } from "@/store/notificationStore"
 import { useAuthStore } from "@/store/authStore"
+import { useProjectStore } from "@/store/projectStore"
 import DataTypeInfo from "@/components/DataTypeInfo"
 import PriorityBadge from "@/components/PriorityBadge"
 import { cn } from "@/lib/utils"
-import type { DataItem } from "@/types"
+import { buildDeliveryRecord } from "@/lib/delivery"
+import type { DatasetDelivery, DataItem, Project } from "@/types"
 
 const dataTypeIcons = {
   text: FileText,
@@ -141,9 +143,10 @@ function AnnotationPanel({ item }: { item: DataItem }) {
 export default function ReviewTask() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { tasks, loadTasks, updateTask } = useTaskStore()
+  const { tasks, loadTasks, updateTask, getTasksByProject } = useTaskStore()
   const { addNotification } = useNotificationStore()
   const { currentUser } = useAuthStore()
+  const { getProjectById, updateProject, loadProjects } = useProjectStore()
   const [itemStatuses, setItemStatuses] = useState<Record<string, boolean>>({})
   const [rejectReason, setRejectReason] = useState("")
   const [showRejectForm, setShowRejectForm] = useState(false)
@@ -151,7 +154,8 @@ export default function ReviewTask() {
 
   useEffect(() => {
     loadTasks()
-  }, [loadTasks])
+    loadProjects()
+  }, [loadTasks, loadProjects])
 
   const task = useMemo(() => tasks.find((t) => t.id === id), [tasks, id])
 
@@ -181,6 +185,7 @@ export default function ReviewTask() {
     setIsSubmitting(true)
     const rate = accuracy / 100
     const reviewerId = currentUser?.id
+    const reviewerName = currentUser?.name ?? '审核员'
 
     updateTask(task.id, {
       status: "reviewing",
@@ -194,6 +199,22 @@ export default function ReviewTask() {
         reviewerId,
         rejectReason: undefined,
       })
+
+      const projectTasks = getTasksByProject(task.projectId)
+      const project = getProjectById(task.projectId)
+      if (project && projectTasks.some((t) => t.status === 'approved')) {
+        const record = buildDeliveryRecord('json', projectTasks, reviewerName)
+        const delivery: DatasetDelivery = {
+          id: record.id,
+          format: record.format,
+          dataCount: record.dataCount,
+          generatedAt: record.generatedAt,
+          generatedBy: record.generatedBy,
+          fileSizeKB: record.fileSizeKB,
+        }
+        const nextDeliveries = [...(project.deliveries ?? []), delivery]
+        updateProject(project.id, { deliveries: nextDeliveries } as Partial<Project>)
+      }
     }, 200)
 
     addNotification({

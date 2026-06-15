@@ -23,9 +23,14 @@ import { useTaskStore } from '@/store/taskStore'
 import StatusBadge from '@/components/StatusBadge'
 import DataTypeInfo from '@/components/DataTypeInfo'
 import { cn } from '@/lib/utils'
-import type { DatasetDelivery, Project, Task } from '@/types'
-
-type DeliveryFormat = 'json' | 'csv' | 'xml'
+import {
+  buildDeliveryFile,
+  triggerDownload,
+  buildDeliveryRecord,
+  formatBytes,
+} from '@/lib/delivery'
+import type { DatasetDelivery, Project } from '@/types'
+import type { DeliveryFormat } from '@/lib/delivery'
 
 const formatOptions: { key: DeliveryFormat; label: string; icon: typeof FileJson }[] = [
   { key: 'json', label: 'JSON', icon: FileJson },
@@ -49,62 +54,16 @@ const accuracyBuckets = [
   { label: '偏低 <70%', min: 0, max: 0.7, color: '#EF4444' },
 ]
 
-const formatBytes = (kb: number): string => {
-  if (kb < 1024) return `${kb.toFixed(0)} KB`
-  return `${(kb / 1024).toFixed(1)} MB`
-}
-
-const buildSampleCSV = (tasks: Task[]): string => {
-  const rows: string[][] = [['task_id', 'data_id', 'content', 'annotation_json', 'accuracy']]
-  tasks.forEach((t) => {
-    t.dataItems.forEach((d) => {
-      rows.push([
-        t.id,
-        d.id,
-        String(d.content ?? '').replace(/\r?\n/g, ' '),
-        JSON.stringify(d.annotation ?? {}),
-        t.accuracyRate != null ? String(t.accuracyRate) : '',
-      ])
-    })
-  })
-  return rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
-}
-
-const buildDeliveryFile = (fmt: DeliveryFormat, tasks: Task[]): { content: string; mime: string; ext: string } => {
-  const approved = tasks.filter((t) => t.status === 'approved')
-  const data = approved.flatMap((t) =>
-    t.dataItems.map((d) => ({
-      taskId: t.id,
-      dataId: d.id,
-      content: d.content,
-      annotation: d.annotation ?? {},
-      accuracy: t.accuracyRate,
-    }))
-  )
-  if (fmt === 'json') {
-    return { content: JSON.stringify(data, null, 2), mime: 'application/json', ext: 'json' }
-  }
-  if (fmt === 'xml') {
-    const body = data
-      .map(
-        (item) =>
-          `  <record><taskId>${item.taskId}</taskId><dataId>${item.dataId}</dataId><content><![CDATA[${String(
-            item.content ?? ''
-          ).replace(/\]\]>/g, '')}]]></content><annotation>${JSON.stringify(
-            item.annotation
-          )}</annotation><accuracy>${item.accuracy ?? ''}</accuracy></record>`
-      )
-      .join('\n')
-    return { content: `<?xml version="1.0" encoding="UTF-8"?>\n<dataset>\n${body}\n</dataset>`, mime: 'application/xml', ext: 'xml' }
-  }
-  return { content: buildSampleCSV(approved), mime: 'text/csv', ext: 'csv' }
-}
-
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { getProjectById, loadProjects, updateProject } = useProjectStore()
-  const { loadTasks, getTasksByProject } = useTaskStore()
+  const {
+    getProjectById,
+    loadProjects,
+    updateProject,
+    _loaded: projectsLoaded,
+  } = useProjectStore()
+  const { loadTasks, getTasksByProject, _loaded: tasksLoaded } = useTaskStore()
   const [exportingFormat, setExportingFormat] = useState<DeliveryFormat | null>(null)
 
   useEffect(() => {
@@ -114,6 +73,18 @@ export default function ProjectDetail() {
 
   const project = id ? getProjectById(id) : undefined
   const projectTasks = id ? getTasksByProject(id) : []
+  const isLoading = !projectsLoaded || !tasksLoaded
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex items-center gap-3 text-gray-400">
+          <RefreshCw className="h-5 w-5 animate-spin" />
+          <span className="text-sm">加载项目信息...</span>
+        </div>
+      </div>
+    )
+  }
 
   if (!project) {
     return (
@@ -123,9 +94,14 @@ export default function ProjectDetail() {
     )
   }
 
+  const approvedTasks = useMemo(
+    () => projectTasks.filter((t) => t.status === 'approved'),
+    [projectTasks]
+  )
+  const deliveredCount = approvedTasks.reduce((sum, t) => sum + t.dataItems.length, 0)
   const progress =
     project.dataCount > 0
-      ? Math.round((project.completedCount / project.dataCount) * 100)
+      ? Math.round((deliveredCount / project.dataCount) * 100)
       : 0
   const circumference = 2 * Math.PI * 54
   const strokeDashoffset = circumference - (progress / 100) * circumference
@@ -159,7 +135,7 @@ export default function ProjectDetail() {
     return { neverReworked, once, twice, more, everRejected }
   }, [projectTasks])
 
-  const remaining = Math.max(0, project.dataCount - project.completedCount)
+  const remaining = Math.max(0, project.dataCount - deliveredCount)
 
   const deliveries: DatasetDelivery[] = project.deliveries ?? []
 
@@ -167,33 +143,39 @@ export default function ProjectDetail() {
     if (!project || exportingFormat) return
     setExportingFormat(format)
     setTimeout(() => {
-      const approvedTasks = projectTasks.filter((t) => t.status === 'approved')
-      const { content, mime, ext } = buildDeliveryFile(format, approvedTasks)
-      const sizeKB = Math.max(1, Math.round(new Blob([content]).size / 1024))
-      const blob = new Blob(['\uFEFF' + content], { type: `${mime};charset=utf-8` })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
-      a.href = url
-      a.download = `${project.name}_数据集_${timestamp}.${ext}`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const record = buildDeliveryRecord(format, projectTasks, '客户')
+      const { fileContent, mime, ext } = record
+      const timestamp = new Date(record.generatedAt)
+        .toISOString()
+        .replace(/[-:T]/g, '')
+        .slice(0, 14)
+      const filename = `${project.name}_数据集_${timestamp}.${ext}`
+      triggerDownload(fileContent, mime, filename)
 
-      const delivery: DatasetDelivery = {
-        id: `dlv_${Date.now()}`,
-        format,
-        dataCount: approvedTasks.reduce((sum, t) => sum + t.dataItems.length, 0),
-        generatedAt: new Date().toISOString(),
-        generatedBy: '审核员',
-        fileSizeKB: sizeKB,
+      const deliveryMeta: DatasetDelivery = {
+        id: record.id,
+        format: record.format,
+        dataCount: record.dataCount,
+        generatedAt: record.generatedAt,
+        generatedBy: record.generatedBy,
+        fileSizeKB: record.fileSizeKB,
       }
-      const nextDeliveries = [...(project.deliveries ?? []), delivery]
+      const nextDeliveries = [...(project.deliveries ?? []), deliveryMeta]
       updateProject(project.id, { deliveries: nextDeliveries } as Partial<Project>)
 
       setExportingFormat(null)
     }, 600)
+  }
+
+  const handleDownloadDelivery = (dlv: DatasetDelivery) => {
+    if (exportingFormat) return
+    const { content, mime, ext } = buildDeliveryFile(dlv.format, projectTasks)
+    const timestamp = new Date(dlv.generatedAt)
+      .toISOString()
+      .replace(/[-:T]/g, '')
+      .slice(0, 14)
+    const filename = `${project.name}_${dlv.format.toUpperCase()}_${timestamp}.${ext}`
+    triggerDownload(content, mime, filename)
   }
 
   return (
@@ -263,7 +245,7 @@ export default function ProjectDetail() {
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            {project.completedCount.toLocaleString()} / {project.dataCount.toLocaleString()} 条
+            {deliveredCount.toLocaleString()} / {project.dataCount.toLocaleString()} 条
           </p>
           <p className="text-xs text-warning mt-1 flex items-center gap-1">
             <Clock className="h-3 w-3" />
@@ -409,7 +391,7 @@ export default function ProjectDetail() {
               <button
                 key={fmt.key}
                 onClick={() => handleGenerateDelivery(fmt.key)}
-                disabled={!!exportingFormat || projectTasks.filter((t) => t.status === 'approved').length === 0}
+                disabled={!!exportingFormat || approvedTasks.length === 0}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
                   exportingFormat === fmt.key
@@ -438,13 +420,13 @@ export default function ProjectDetail() {
             >
               <FileText className="h-10 w-10 mx-auto mb-2 opacity-30" />
               <p>暂无交付记录</p>
-              <p className="text-xs mt-1">生成数据集后会在此展示</p>
+              <p className="text-xs mt-1">审核通过后会自动生成，也可手动点击上方按钮生成</p>
             </motion.div>
           ) : (
             <div className="space-y-2">
               {deliveries
                 .slice()
-                .reverse()
+                .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())
                 .map((dlv, i) => {
                   const fmt = formatOptions.find((f) => f.key === dlv.format)
                   const FmtIcon = fmt?.icon ?? FileText
@@ -482,7 +464,7 @@ export default function ProjectDetail() {
                         </div>
                       </div>
                       <button
-                        onClick={() => handleGenerateDelivery(dlv.format)}
+                        onClick={() => handleDownloadDelivery(dlv)}
                         disabled={!!exportingFormat}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary-accent/15 text-primary-accent text-xs font-medium hover:bg-primary-accent/25 transition-colors disabled:opacity-40"
                       >
