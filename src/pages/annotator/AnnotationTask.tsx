@@ -725,7 +725,7 @@ export default function AnnotationTask() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {task.status === "rejected" && task.rejectReason && (
+          {task.rejectReason && (
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-error/10 border border-error/30">
               <AlertTriangle className="h-3.5 w-3.5 text-error" />
               <span className="text-xs text-error">退回原因：{task.rejectReason}</span>

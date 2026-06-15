@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { User, UserRole } from '@/types'
 import { users } from '@/mock'
+import { loadFromStorage, saveToStorage, clearStorage } from './persist'
 
 export type { UserRole }
 
@@ -19,23 +20,36 @@ interface AuthState {
   logout: () => void
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  currentUser: null,
-  isAuthenticated: false,
-  login: (email, password) => {
-    const isDemo = Object.values(DEMO_ACCOUNTS).some(
-      (a) => a.email === email && a.password === password
-    )
-    if (isDemo) {
-      const user = users.find((u) => u.email === email)
-      if (user) {
-        set({ currentUser: user, isAuthenticated: true })
-        return true
+const STORAGE_KEY = 'auth'
+
+export const useAuthStore = create<AuthState>((set) => {
+  const persisted = loadFromStorage<{ currentUser: User | null; isAuthenticated: boolean }>(
+    STORAGE_KEY,
+    { currentUser: null, isAuthenticated: false }
+  )
+  return {
+    currentUser: persisted.currentUser,
+    isAuthenticated: persisted.isAuthenticated,
+    login: (email, password) => {
+      const isDemo = Object.values(DEMO_ACCOUNTS).some(
+        (a) => a.email === email && a.password === password
+      )
+      if (isDemo) {
+        const user = users.find((u) => u.email === email)
+        if (user) {
+          const next = { currentUser: user, isAuthenticated: true }
+          set(next)
+          saveToStorage(STORAGE_KEY, next)
+          return true
+        }
       }
-    }
-    return false
-  },
-  logout: () => {
-    set({ currentUser: null, isAuthenticated: false })
-  },
-}))
+      return false
+    },
+    logout: () => {
+      const next = { currentUser: null, isAuthenticated: false }
+      set(next)
+      saveToStorage(STORAGE_KEY, next)
+      clearStorage()
+    },
+  }
+})

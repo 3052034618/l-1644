@@ -60,8 +60,12 @@ export default function CreateProject() {
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [dataType, setDataType] = useState('')
-  const [deadline, setDeadline] = useState('')
+  const [dataType, setDataType] = useState('text')
+  const [deadline, setDeadline] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 30)
+    return d.toISOString().split('T')[0]
+  })
   const [specification, setSpecification] = useState('')
   const [example, setExample] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState('')
@@ -76,9 +80,9 @@ export default function CreateProject() {
       case 1:
         return true
       case 2:
-        return specification.trim() !== ''
+        return true
       case 3:
-        return selectedTemplate !== ''
+        return true
       default:
         return false
     }
@@ -201,6 +205,7 @@ export default function CreateProject() {
       ? uploadedFiles.reduce((sum, f) => sum + f.dataCount, 0)
       : 100
     const projectStatus = uploadedFiles.length > 0 ? 'active' : 'draft'
+    const templateToUse = selectedTemplate || recommendedTemplates[0]?.id || ''
     const project = {
       id: `p${Date.now()}`,
       name,
@@ -208,8 +213,8 @@ export default function CreateProject() {
       clientId: currentUser?.id ?? '',
       dataType,
       status: projectStatus as 'draft' | 'active' | 'reviewing' | 'completed',
-      specification,
-      templateId: selectedTemplate,
+      specification: specification || recommendedTemplates[0]?.spec || '按标准流程标注',
+      templateId: templateToUse,
       createdAt: new Date().toISOString(),
       deadline: new Date(deadline).toISOString(),
       dataCount: totalDataCount,

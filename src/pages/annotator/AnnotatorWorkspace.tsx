@@ -145,7 +145,7 @@ export default function AnnotatorWorkspace() {
             ) : (
               filteredTasks.map((task) => {
                 const project = getProjectById(task.projectId)
-                const isRejected = task.status === "rejected"
+                const isRejected = !!task.rejectReason
 
                 return (
                   <motion.div
@@ -182,7 +182,7 @@ export default function AnnotatorWorkspace() {
                           </span>
                           <span>数据量：{task.dataItems.length} 条</span>
                         </div>
-                        {isRejected && task.rejectReason && (
+                        {isRejected && (
                           <div className="flex items-start gap-1.5 mt-2 text-xs text-error">
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                             <span>退回原因：{task.rejectReason}</span>
