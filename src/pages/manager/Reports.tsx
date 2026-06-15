@@ -12,6 +12,8 @@ export default function Reports() {
   const { projects, loadProjects } = useProjectStore()
   const [startDate, setStartDate] = useState('2025-06')
   const [endDate, setEndDate] = useState('2026-06')
+  const [isExporting, setIsExporting] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
 
   useEffect(() => {
     loadTasks()
@@ -218,8 +220,227 @@ export default function Reports() {
     }
   }, [])
 
+  const escapeCSV = (value: string | number): string => {
+    const str = String(value ?? '')
+    if (/[",\n]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    return str
+  }
+
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return '-'
+    const d = new Date(dateStr)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  const formatDateTime = (dateStr: string): string => {
+    if (!dateStr) return '-'
+    const d = new Date(dateStr)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+
+  const statusMap: Record<string, string> = {
+    active: '进行中',
+    completed: '已完成',
+    paused: '已暂停',
+    reviewing: '审核中',
+    draft: '草稿',
+  }
+
+  const dataTypeMap: Record<string, string> = {
+    text: '文本',
+    image: '图像',
+    audio: '音频',
+    video: '视频',
+  }
+
+  const getProjectTasks = (projectId: string) => {
+    return tasks.filter((t) => t.projectId === projectId)
+  }
+
+  const getProjectCompletedTasks = (projectId: string) => {
+    return tasks.filter(
+      (t) =>
+        t.projectId === projectId &&
+        (t.status === 'completed' ||
+          t.status === 'approved' ||
+          t.status === 'submitted' ||
+          t.status === 'reviewing')
+    )
+  }
+
+  const getProjectAccuracy = (projectId: string, fallback: number) => {
+    const projectTasks = tasks.filter(
+      (t) => t.projectId === projectId && t.accuracyRate !== undefined && t.accuracyRate !== null
+    )
+    if (projectTasks.length === 0) return fallback
+    const avg =
+      projectTasks.reduce((s, t) => s + (t.accuracyRate ?? 0), 0) / projectTasks.length
+    return avg
+  }
+
+  const generateReportCSV = (): string => {
+    const lines: string[] = []
+
+    const now = new Date()
+    const nowStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+
+    lines.push(`${escapeCSV('运营指标报表')},${escapeCSV('')}`)
+    lines.push(`${escapeCSV('生成时间')},${escapeCSV(nowStr)}`)
+    lines.push(`${escapeCSV('日期范围')},${escapeCSV(`${startDate} 至 ${endDate}`)}`)
+    lines.push(`${escapeCSV('项目总数')},${escapeCSV(projects.length)}`)
+    lines.push(`${escapeCSV('任务总数')},${escapeCSV(tasks.length)}`)
+    lines.push(`${escapeCSV('标注总量')},${escapeCSV(metrics.totalAnnotations)}`)
+    lines.push(
+      `${escapeCSV('平均准确率')},${escapeCSV(`${(metrics.avgAccuracy * 100).toFixed(1)}%`)}`
+    )
+    lines.push(
+      `${escapeCSV('平均交付天数')},${escapeCSV(`${metrics.avgDeliveryDays.toFixed(1)}天`)}`
+    )
+    lines.push(
+      `${escapeCSV('退回率')},${escapeCSV(`${(metrics.rejectRate * 100).toFixed(1)}%`)}`
+    )
+
+    lines.push('')
+
+    lines.push(
+      [
+        '项目ID',
+        '项目名称',
+        '数据类型',
+        '总任务数',
+        '已完成',
+        '准确率',
+        '状态',
+        '创建时间',
+        '截止时间',
+      ]
+        .map(escapeCSV)
+        .join(',')
+    )
+
+    projects.forEach((p) => {
+      const projectTasks = getProjectTasks(p.id)
+      const completedTasks = getProjectCompletedTasks(p.id)
+      const accuracy = getProjectAccuracy(p.id, p.accuracyRate)
+      lines.push(
+        [
+          p.id,
+          p.name,
+          dataTypeMap[p.dataType] ?? p.dataType,
+          projectTasks.length,
+          completedTasks.length,
+          `${(accuracy * 100).toFixed(1)}%`,
+          statusMap[p.status] ?? p.status,
+          formatDateTime(p.createdAt),
+          formatDate(p.deadline),
+        ]
+          .map(escapeCSV)
+          .join(',')
+      )
+    })
+
+    lines.push('')
+
+    lines.push(
+      ['月份', '标注量', '平均准确率', '平均交付天数', '退回率'].map(escapeCSV).join(',')
+    )
+
+    const months = [
+      '2025-07',
+      '2025-08',
+      '2025-09',
+      '2025-10',
+      '2025-11',
+      '2025-12',
+      '2026-01',
+      '2026-02',
+      '2026-03',
+      '2026-04',
+      '2026-05',
+      '2026-06',
+    ]
+
+    months.forEach((m) => {
+      const monthTasks = tasks.filter((t) => t.createdAt.startsWith(m))
+      const annotationVolume = monthTasks.reduce((s, t) => s + t.dataItems.length, 0)
+
+      const tasksWithAccuracy = monthTasks.filter(
+        (t) => t.accuracyRate !== undefined && t.accuracyRate !== null
+      )
+      const avgAccuracy = tasksWithAccuracy.length
+        ? tasksWithAccuracy.reduce((s, t) => s + (t.accuracyRate ?? 0), 0) /
+          tasksWithAccuracy.length
+        : 0
+
+      const approvedTasks = monthTasks.filter((t) => t.status === 'approved')
+      const avgDeliveryDays = approvedTasks.length
+        ? approvedTasks.reduce((s, t) => {
+            if (!t.submittedAt) return s
+            const created = new Date(t.createdAt).getTime()
+            const submitted = new Date(t.submittedAt).getTime()
+            return s + (submitted - created) / (1000 * 60 * 60 * 24)
+          }, 0) / approvedTasks.length
+        : 0
+
+      const rejectedCount = monthTasks.filter((t) => t.status === 'rejected').length
+      const reviewedCount = monthTasks.filter(
+        (t) =>
+          t.status === 'approved' || t.status === 'rejected' || t.status === 'reviewing'
+      ).length
+      const rejectRate = reviewedCount ? rejectedCount / reviewedCount : 0
+
+      const monthDisplay = m.replace('-', '年') + '月'
+      lines.push(
+        [
+          monthDisplay,
+          annotationVolume,
+          `${(avgAccuracy * 100).toFixed(1)}%`,
+          `${avgDeliveryDays.toFixed(1)}天`,
+          `${(rejectRate * 100).toFixed(1)}%`,
+        ]
+          .map(escapeCSV)
+          .join(',')
+      )
+    })
+
+    return '\uFEFF' + lines.join('\n')
+  }
+
   const handleExport = () => {
-    alert('导出报告功能（模拟）')
+    if (isExporting) return
+    setIsExporting(true)
+    setTimeout(() => {
+      try {
+        const csvContent = generateReportCSV()
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        const now = new Date()
+        const timestamp =
+          now.getFullYear().toString() +
+          String(now.getMonth() + 1).padStart(2, '0') +
+          String(now.getDate()).padStart(2, '0') +
+          '_' +
+          String(now.getHours()).padStart(2, '0') +
+          String(now.getMinutes()).padStart(2, '0') +
+          String(now.getSeconds()).padStart(2, '0')
+        link.href = url
+        link.download = `运营报表_${timestamp}.csv`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+
+        setShowSuccess(true)
+        setTimeout(() => {
+          setShowSuccess(false)
+        }, 2000)
+      } finally {
+        setIsExporting(false)
+      }
+    }, 1000)
   }
 
   return (
@@ -229,13 +450,24 @@ export default function Reports() {
           <h1 className="text-2xl font-heading font-bold">运营报告</h1>
           <p className="text-gray-400 text-sm mt-1">数据标注运营指标总览</p>
         </div>
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-accent text-white text-sm font-medium hover:bg-primary-accent/90 transition-colors"
-        >
-          <Download className="h-4 w-4" />
-          导出报告
-        </button>
+        <div className="flex items-center gap-3">
+          {showSuccess && (
+            <span className="text-sm text-emerald-400">导出成功</span>
+          )}
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-accent text-white text-sm font-medium transition-colors',
+              isExporting
+                ? 'opacity-70 cursor-not-allowed'
+                : 'hover:bg-primary-accent/90'
+            )}
+          >
+            <Download className="h-4 w-4" />
+            {isExporting ? '导出中...' : '导出报告'}
+          </button>
+        </div>
       </div>
 
       <div className="glass rounded-lg p-4 flex items-center gap-4">

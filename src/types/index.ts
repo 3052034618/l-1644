@@ -27,6 +27,7 @@ export interface Project {
   dataCount: number
   completedCount: number
   accuracyRate: number
+  uploadedFiles?: Array<{name: string, size: number, dataCount: number, type: string}>
 }
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'rejected' | 'submitted' | 'reviewing' | 'approved'
@@ -43,6 +44,7 @@ export interface Task {
   id: string
   projectId: string
   assigneeId: string
+  reviewerId?: string
   status: TaskStatus
   priority: TaskPriority
   dataItems: DataItem[]
@@ -50,6 +52,7 @@ export interface Task {
   submittedAt?: string
   accuracyRate?: number
   rejectReason?: string
+  notes?: string
 }
 
 export type NotificationType = 'task_assigned' | 'task_submitted' | 'quality_alert' | 'complaint' | 'report_ready'

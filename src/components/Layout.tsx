@@ -44,6 +44,7 @@ const roleNavItems: Record<UserRole, NavItem[]> = {
     { label: "任务分配", icon: ClipboardList, path: "/manager/tasks" },
     { label: "标注员管理", icon: Users, path: "/manager/members" },
     { label: "运营报表", icon: BarChart3, path: "/manager/reports" },
+    { label: "投诉处理", icon: MessageSquareWarning, path: "/manager/complaints" },
   ],
   annotator: [
     { label: "标注工作台", icon: LayoutDashboard, path: "/annotator" },

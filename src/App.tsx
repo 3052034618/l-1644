@@ -9,6 +9,7 @@ import ManagerCenter from "@/pages/manager/ManagerCenter";
 import TaskAssignment from "@/pages/manager/TaskAssignment";
 import MemberManagement from "@/pages/manager/MemberManagement";
 import Reports from "@/pages/manager/Reports";
+import ComplaintManagement from "@/pages/manager/ComplaintManagement";
 import AnnotatorWorkspace from "@/pages/annotator/AnnotatorWorkspace";
 import AnnotationTask from "@/pages/annotator/AnnotationTask";
 import ReviewerWorkspace from "@/pages/reviewer/ReviewerWorkspace";
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<Layout />}>
           <Route path="/client" element={<ClientWorkspace />} />
+          <Route path="/client/projects" element={<Navigate to="/client" replace />} />
           <Route path="/client/project/create" element={<CreateProject />} />
           <Route path="/client/project/:id" element={<ProjectDetail />} />
           <Route path="/client/complaints" element={<Complaints />} />
@@ -30,9 +32,14 @@ export default function App() {
           <Route path="/manager/tasks" element={<TaskAssignment />} />
           <Route path="/manager/members" element={<MemberManagement />} />
           <Route path="/manager/reports" element={<Reports />} />
+          <Route path="/manager/complaints" element={<ComplaintManagement />} />
           <Route path="/annotator" element={<AnnotatorWorkspace />} />
+          <Route path="/annotator/tasks" element={<Navigate to="/annotator" replace />} />
+          <Route path="/annotator/workspace" element={<Navigate to="/annotator" replace />} />
           <Route path="/annotator/task/:id" element={<AnnotationTask />} />
           <Route path="/reviewer" element={<ReviewerWorkspace />} />
+          <Route path="/reviewer/queue" element={<Navigate to="/reviewer" replace />} />
+          <Route path="/reviewer/review" element={<Navigate to="/reviewer" replace />} />
           <Route path="/reviewer/task/:id" element={<ReviewTask />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/notifications" element={<Notifications />} />

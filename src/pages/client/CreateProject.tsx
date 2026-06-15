@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -50,16 +50,12 @@ const dataTypes = [
   },
 ]
 
-const mockFiles = [
-  { name: 'data_batch_001.json', size: '12.3 MB', progress: 100 },
-  { name: 'data_batch_002.json', size: '8.7 MB', progress: 72 },
-  { name: 'data_batch_003.json', size: '15.1 MB', progress: 35 },
-]
-
 export default function CreateProject() {
   const navigate = useNavigate()
   const { addProject } = useProjectStore()
   const { currentUser } = useAuthStore()
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
@@ -69,6 +65,7 @@ export default function CreateProject() {
   const [specification, setSpecification] = useState('')
   const [example, setExample] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState('')
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{name: string, size: number, dataCount: number, type: string, progress?: number}>>([])
 
   const recommendedTemplates = templates.filter((t) => t.dataType === dataType)
 
@@ -87,21 +84,140 @@ export default function CreateProject() {
     }
   }
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  const estimateDataCount = (content: string, fileName: string, fileSize: number): number => {
+    const ext = fileName.split('.').pop()?.toLowerCase()
+    try {
+      if (ext === 'json') {
+        const parsed = JSON.parse(content)
+        if (Array.isArray(parsed)) return parsed.length
+        if (typeof parsed === 'object' && parsed !== null) {
+          const vals = Object.values(parsed)
+          if (vals.length > 0) {
+            const firstArr = vals.find(v => Array.isArray(v))
+            if (firstArr) return (firstArr as unknown[]).length
+          }
+          return Object.keys(parsed).length || 1
+        }
+      } else if (ext === 'csv') {
+        const lines = content.split('\n').filter(l => l.trim().length > 0)
+        return Math.max(0, lines.length - 1) || 1
+      } else if (ext === 'xml') {
+        const matches = content.match(/<(\w+)[^>]*>/g)
+        if (matches && matches.length > 0) {
+          const counts: Record<string, number> = {}
+          matches.forEach(m => {
+            const tag = m.replace(/[<>\s/].*/g, '').replace(/[^a-zA-Z_]/g, '')
+            if (tag) counts[tag] = (counts[tag] || 0) + 1
+          })
+          const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+          if (sorted.length > 0) return sorted[0][1]
+        }
+      }
+    } catch {
+    }
+    return Math.max(1, Math.floor(fileSize / 1024))
+  }
+
+  const processFiles = (files: FileList | File[]) => {
+    const validExts = ['.json', '.csv', '.xml']
+    const fileArray = Array.from(files).filter(f => {
+      const ext = '.' + f.name.split('.').pop()?.toLowerCase()
+      return validExts.includes(ext)
+    })
+
+    fileArray.forEach(file => {
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase()
+      const fileType = ext === '.json' ? 'JSON' : ext === '.csv' ? 'CSV' : 'XML'
+      const newFile = {
+        name: file.name,
+        size: file.size,
+        dataCount: 0,
+        type: fileType,
+        progress: 0,
+      }
+      setUploadedFiles(prev => [...prev, newFile])
+
+      const startTime = Date.now()
+      const duration = 800
+      const animateProgress = () => {
+        const elapsed = Date.now() - startTime
+        const progress = Math.min(100, (elapsed / duration) * 100)
+        setUploadedFiles(prev => prev.map(f => 
+          f.name === file.name && f.size === file.size ? { ...f, progress } : f
+        ))
+        if (progress < 100) {
+          requestAnimationFrame(animateProgress)
+        }
+      }
+      animateProgress()
+
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const content = e.target?.result as string
+        const dataCount = estimateDataCount(content, file.name, file.size)
+        setUploadedFiles(prev => prev.map(f => 
+          f.name === file.name && f.size === file.size ? { ...f, dataCount } : f
+        ))
+      }
+      reader.onerror = () => {
+        const dataCount = Math.max(1, Math.floor(file.size / 1024))
+        setUploadedFiles(prev => prev.map(f => 
+          f.name === file.name && f.size === file.size ? { ...f, dataCount } : f
+        ))
+      }
+      reader.readAsText(file)
+    })
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      processFiles(e.target.files)
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.files) {
+      processFiles(e.dataTransfer.files)
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
   const handleCreate = () => {
+    const totalDataCount = uploadedFiles.length > 0
+      ? uploadedFiles.reduce((sum, f) => sum + f.dataCount, 0)
+      : 100
+    const projectStatus = uploadedFiles.length > 0 ? 'active' : 'draft'
     const project = {
       id: `p${Date.now()}`,
       name,
       description,
       clientId: currentUser?.id ?? '',
       dataType,
-      status: 'draft' as const,
+      status: projectStatus as 'draft' | 'active' | 'reviewing' | 'completed',
       specification,
       templateId: selectedTemplate,
       createdAt: new Date().toISOString(),
       deadline: new Date(deadline).toISOString(),
-      dataCount: 0,
+      dataCount: totalDataCount,
       completedCount: 0,
       accuracyRate: 0,
+      uploadedFiles: uploadedFiles.length > 0
+        ? uploadedFiles.map(({ name, size, dataCount, type }) => ({ name, size, dataCount, type }))
+        : undefined,
     }
     addProject(project)
     navigate('/client')
@@ -228,38 +344,66 @@ export default function CreateProject() {
 
           {step === 1 && (
             <div className="space-y-5">
-              <div className="border-2 border-dashed border-white/15 rounded-lg p-10 text-center hover:border-primary-accent/50 transition-colors cursor-pointer">
+              <div
+                className="border-2 border-dashed border-white/15 rounded-lg p-10 text-center hover:border-primary-accent/50 transition-colors cursor-pointer"
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,.csv,.xml"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
                 <Upload className="h-10 w-10 mx-auto text-gray-400 mb-3" />
                 <p className="text-sm text-gray-300">拖拽文件到此处上传</p>
                 <p className="text-xs text-gray-500 mt-1">
                   支持 JSON、CSV、XML 格式，单文件最大 500MB
                 </p>
-                <button className="mt-4 px-4 py-2 rounded-lg bg-primary-accent/15 text-primary-accent text-sm font-medium hover:bg-primary-accent/25 transition-colors">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click() }}
+                  className="mt-4 px-4 py-2 rounded-lg bg-primary-accent/15 text-primary-accent text-sm font-medium hover:bg-primary-accent/25 transition-colors"
+                >
                   选择文件
                 </button>
               </div>
               <div className="space-y-3">
-                {mockFiles.map((file) => (
+                {uploadedFiles.map((file, index) => (
                   <div
-                    key={file.name}
+                    key={`${file.name}-${index}`}
                     className="flex items-center gap-3 bg-white/5 rounded-lg p-3"
                   >
                     <FileText className="h-5 w-5 text-gray-400 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <span className="text-sm truncate">{file.name}</span>
-                        <span className="text-xs text-gray-500 shrink-0 ml-2">
-                          {file.size}
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          <span className="text-xs text-gray-500">
+                            {formatFileSize(file.size)}
+                          </span>
+                          {file.dataCount > 0 && (
+                            <span className="text-xs text-primary-accent">
+                              约 {file.dataCount} 条
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/10 mt-1.5 overflow-hidden">
                         <div
                           className="h-full rounded-full bg-primary-accent transition-all"
-                          style={{ width: `${file.progress}%` }}
+                          style={{ width: `${file.progress ?? 0}%` }}
                         />
                       </div>
                     </div>
-                    <button className="text-gray-400 hover:text-error transition-colors shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="text-gray-400 hover:text-error transition-colors shrink-0"
+                    >
                       <X className="h-4 w-4" />
                     </button>
                   </div>

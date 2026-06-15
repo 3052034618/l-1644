@@ -177,14 +177,23 @@ export default function ReviewTask() {
   }
 
   const handleApprove = () => {
-    if (!task || isSubmitting) return
+    if (!task || isSubmitting || accuracy < 85) return
     setIsSubmitting(true)
     const rate = accuracy / 100
+    const reviewerId = currentUser?.id
 
     updateTask(task.id, {
-      status: "approved",
-      accuracyRate: rate,
+      status: "reviewing",
+      reviewerId,
     })
+
+    setTimeout(() => {
+      updateTask(task.id, {
+        status: "approved",
+        accuracyRate: rate,
+        reviewerId,
+      })
+    }, 200)
 
     addNotification({
       id: `n_${Date.now()}`,
@@ -199,18 +208,20 @@ export default function ReviewTask() {
     setTimeout(() => {
       setIsSubmitting(false)
       navigate("/reviewer")
-    }, 500)
+    }, 700)
   }
 
   const handleReject = () => {
     if (!task || isSubmitting || !rejectReason.trim()) return
     setIsSubmitting(true)
     const rate = accuracy / 100
+    const reviewerId = currentUser?.id
 
     updateTask(task.id, {
-      status: "rejected",
+      status: "in_progress",
       rejectReason: rejectReason.trim(),
       accuracyRate: rate,
+      reviewerId,
     })
 
     addNotification({
@@ -378,6 +389,7 @@ export default function ReviewTask() {
                   rows={3}
                   className="w-full rounded-lg bg-secondary/50 border border-white/5 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-accent/50 resize-none"
                 />
+                <p className="text-xs text-gray-500 mt-2">退回后任务状态将改为"进行中"，标注员可重新处理</p>
               </div>
             </motion.div>
           )}
@@ -393,18 +405,26 @@ export default function ReviewTask() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleApprove}
-              disabled={isSubmitting}
-              className={cn(
-                "flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-all",
-                "bg-success/15 text-success hover:bg-success/25",
-                isSubmitting && "opacity-50 cursor-not-allowed"
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleApprove}
+                disabled={isSubmitting || accuracy < 85}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-all",
+                  "bg-success/15 text-success hover:bg-success/25",
+                  (isSubmitting || accuracy < 85) && "opacity-40 cursor-not-allowed grayscale"
+                )}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                通过
+              </button>
+              {accuracy < 85 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-medium text-yellow-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  准确率低于阈值，必须退回返工
+                </span>
               )}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              通过
-            </button>
+            </div>
             <button
               onClick={() => {
                 if (showRejectForm && rejectReason.trim()) {

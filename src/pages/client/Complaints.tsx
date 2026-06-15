@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, X, MessageSquareWarning } from 'lucide-react'
+import { Plus, X, MessageSquareWarning, Clock } from 'lucide-react'
 import { useComplaintStore } from '@/store/complaintStore'
 import { useProjectStore } from '@/store/projectStore'
 import { useAuthStore } from '@/store/authStore'
+import { users as mockUsers } from '@/mock/users'
 import { cn } from '@/lib/utils'
 
 const complaintStatusConfig: Record<
@@ -41,6 +42,16 @@ export default function Complaints() {
   const getProjectName = (projectId: string) => {
     const p = projects.find((proj) => proj.id === projectId)
     return p?.name ?? projectId
+  }
+
+  const getUserName = (userId: string) => {
+    const u = mockUsers.find((u) => u.id === userId)
+    return u?.name ?? userId
+  }
+
+  const formatCreditAdjustment = (value: number) => {
+    if (value > 0) return `+${value}`
+    return `${value}`
   }
 
   const handleSubmit = () => {
@@ -125,30 +136,50 @@ export default function Complaints() {
                     className="overflow-hidden"
                   >
                     <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
-                      {complaint.responsibleParty && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">责任人：</span>
-                          <span className="text-gray-300">
-                            {complaint.responsibleParty}
-                          </span>
-                        </div>
-                      )}
-                      {complaint.creditAdjustment !== undefined && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">信用调整：</span>
-                          <span className="text-error font-medium">
-                            {complaint.creditAdjustment}
-                          </span>
-                        </div>
-                      )}
-                      {complaint.resolvedAt && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">解决时间：</span>
-                          <span className="text-gray-300">
-                            {new Date(complaint.resolvedAt).toLocaleString(
-                              'zh-CN',
-                            )}
-                          </span>
+                      {complaint.status === 'resolved' ? (
+                        <>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-gray-500">责任人：</span>
+                            <span className="text-gray-300">
+                              {complaint.responsibleParty
+                                ? getUserName(complaint.responsibleParty)
+                                : '无责任'}
+                            </span>
+                          </div>
+                          {complaint.creditAdjustment !== undefined && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-gray-500">信用调整：</span>
+                              <span
+                                className={cn(
+                                  'font-medium',
+                                  complaint.creditAdjustment > 0
+                                    ? 'text-success'
+                                    : complaint.creditAdjustment < 0
+                                      ? 'text-error'
+                                      : 'text-gray-300'
+                                )}
+                              >
+                                {formatCreditAdjustment(
+                                  complaint.creditAdjustment
+                                )}
+                              </span>
+                            </div>
+                          )}
+                          {complaint.resolvedAt && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-gray-500">解决时间：</span>
+                              <span className="text-gray-300">
+                                {new Date(
+                                  complaint.resolvedAt
+                                ).toLocaleString('zh-CN')}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs text-warning">
+                          <Clock className="h-3 w-3" />
+                          <span>等待管理员处理...</span>
                         </div>
                       )}
                     </div>
