@@ -21,14 +21,23 @@ const filterTabs: { key: FilterTab; label: string }[] = [
   { key: "rejected", label: "退回" },
 ]
 
+const taskToTab = (t: { status: string; rejectReason?: string }): FilterTab => {
+  if (t.status === "in_progress" && t.rejectReason) return "rejected"
+  if (t.status === "pending") return "pending"
+  if (t.status === "in_progress") return "in_progress"
+  if (["submitted", "reviewing", "approved", "completed"].includes(t.status)) return "submitted"
+  if (t.status === "rejected") return "rejected"
+  return "all"
+}
+
 const statusToTabMap: Record<string, FilterTab> = {
   pending: "pending",
   in_progress: "in_progress",
   submitted: "submitted",
-  rejected: "rejected",
   reviewing: "submitted",
   approved: "submitted",
   completed: "submitted",
+  rejected: "rejected",
 }
 
 export default function AnnotatorWorkspace() {
@@ -63,7 +72,7 @@ export default function AnnotatorWorkspace() {
   const filteredTasks =
     activeTab === "all"
       ? myTasks
-      : myTasks.filter((t) => statusToTabMap[t.status] === activeTab)
+      : myTasks.filter((t) => taskToTab(t) === activeTab)
 
   return (
     <div className="space-y-6">

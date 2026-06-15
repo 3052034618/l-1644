@@ -16,11 +16,17 @@ type FilterTab = "全部" | "待审核" | "已通过" | "已退回"
 
 const filterTabs: FilterTab[] = ["全部", "待审核", "已通过", "已退回"]
 
-const statusFilterMap: Record<FilterTab, TaskStatus[]> = {
-  "全部": ["submitted", "reviewing", "approved", "rejected"],
-  "待审核": ["submitted", "reviewing"],
-  "已通过": ["approved"],
-  "已退回": ["rejected"],
+const matchTab = (task: { status: string; rejectReason?: string; everRejected?: boolean }, tab: FilterTab): boolean => {
+  switch (tab) {
+    case "全部":
+      return ["submitted", "reviewing", "approved", "rejected"].includes(task.status) || !!task.everRejected || !!task.rejectReason
+    case "待审核":
+      return ["submitted", "reviewing"].includes(task.status)
+    case "已通过":
+      return task.status === "approved"
+    case "已退回":
+      return task.status === "rejected" || task.everRejected === true || !!task.rejectReason
+  }
 }
 
 function formatTime(iso: string) {
@@ -48,14 +54,11 @@ export default function ReviewerWorkspace() {
   }, [loadTasks, loadProjects])
 
   const reviewTasks = useMemo(() => {
-    return tasks.filter((t) =>
-      ["submitted", "reviewing", "approved", "rejected"].includes(t.status)
-    )
+    return tasks.filter((t) => matchTab(t, "全部"))
   }, [tasks])
 
   const filteredTasks = useMemo(() => {
-    const statuses = statusFilterMap[activeTab]
-    return reviewTasks.filter((t) => statuses.includes(t.status))
+    return reviewTasks.filter((t) => matchTab(t, activeTab))
   }, [reviewTasks, activeTab])
 
   const pendingCount = useMemo(

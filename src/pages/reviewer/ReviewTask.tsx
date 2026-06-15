@@ -192,6 +192,7 @@ export default function ReviewTask() {
         status: "approved",
         accuracyRate: rate,
         reviewerId,
+        rejectReason: undefined,
       })
     }, 200)
 
@@ -216,12 +217,15 @@ export default function ReviewTask() {
     setIsSubmitting(true)
     const rate = accuracy / 100
     const reviewerId = currentUser?.id
+    const currentRework = task.reworkCount ?? 0
 
     updateTask(task.id, {
       status: "in_progress",
       rejectReason: rejectReason.trim(),
       accuracyRate: rate,
       reviewerId,
+      reworkCount: currentRework + 1,
+      everRejected: true,
     })
 
     addNotification({

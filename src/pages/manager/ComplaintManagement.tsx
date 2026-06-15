@@ -4,7 +4,7 @@ import { MessageSquareWarning, Filter, User, CheckCircle2 } from 'lucide-react'
 import { useComplaintStore } from '@/store/complaintStore'
 import { useProjectStore } from '@/store/projectStore'
 import { useAuthStore } from '@/store/authStore'
-import { users as mockUsers } from '@/mock/users'
+import { useUserStore } from '@/store/userStore'
 import { cn } from '@/lib/utils'
 import type { Complaint, User as UserType } from '@/types'
 
@@ -28,6 +28,7 @@ export default function ComplaintManagement() {
   const { currentUser } = useAuthStore()
   const { complaints, loadComplaints, updateComplaint } = useComplaintStore()
   const { projects, loadProjects } = useProjectStore()
+  const { users, loadUsers, getUserById, adjustCreditScore } = useUserStore()
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all')
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null)
   const [responsibleParty, setResponsibleParty] = useState('none')
@@ -37,13 +38,14 @@ export default function ComplaintManagement() {
   useEffect(() => {
     loadComplaints()
     loadProjects()
-  }, [loadComplaints, loadProjects])
+    loadUsers()
+  }, [loadComplaints, loadProjects, loadUsers])
 
   const annotatorsAndReviewers = useMemo(() => {
-    return mockUsers.filter(
+    return users.filter(
       (u) => u.role === 'annotator' || u.role === 'reviewer'
     )
-  }, [])
+  }, [users])
 
   const filteredComplaints = useMemo(() => {
     if (statusFilter === 'all') return complaints
@@ -56,12 +58,12 @@ export default function ComplaintManagement() {
   }
 
   const getClientName = (clientId: string) => {
-    const u = mockUsers.find((u) => u.id === clientId)
+    const u = getUserById(clientId)
     return u?.name ?? clientId
   }
 
   const getUserName = (userId: string) => {
-    const u = mockUsers.find((u) => u.id === userId)
+    const u = getUserById(userId)
     return u?.name ?? userId
   }
 
@@ -83,18 +85,29 @@ export default function ComplaintManagement() {
 
   const handleResolve = () => {
     if (!selectedComplaint) return
-    updateComplaint(selectedComplaint.id, {
+    const responsibleId = responsibleParty === 'none' ? undefined : responsibleParty
+    const resolvedAt = new Date().toISOString()
+    const patch: Partial<Complaint> = {
       status: 'resolved',
-      responsibleParty: responsibleParty === 'none' ? undefined : responsibleParty,
+      responsibleParty: responsibleId,
       creditAdjustment: creditAdjustment,
-      resolvedAt: new Date().toISOString(),
-    })
+      resolutionNote: handleRemark.trim() || undefined,
+      resolvedAt,
+    }
+    updateComplaint(selectedComplaint.id, patch)
+
+    if (responsibleId && creditAdjustment !== 0) {
+      adjustCreditScore(
+        responsibleId,
+        creditAdjustment,
+        `投诉处理：${selectedComplaint.reason.slice(0, 30)}${selectedComplaint.reason.length > 30 ? '...' : ''}`,
+        selectedComplaint.id
+      )
+    }
+
     setSelectedComplaint({
       ...selectedComplaint,
-      status: 'resolved',
-      responsibleParty: responsibleParty === 'none' ? undefined : responsibleParty,
-      creditAdjustment: creditAdjustment,
-      resolvedAt: new Date().toISOString(),
+      ...patch,
     })
   }
 
@@ -298,6 +311,16 @@ export default function ComplaintManagement() {
                         </p>
                       </div>
                     </div>
+                    {selectedComplaint.resolutionNote && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">处理结论</label>
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-sm text-gray-300 whitespace-pre-wrap">
+                            {selectedComplaint.resolutionNote}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="border-t border-white/5 pt-5 space-y-4">

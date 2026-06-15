@@ -4,7 +4,7 @@ import { Plus, X, MessageSquareWarning, Clock } from 'lucide-react'
 import { useComplaintStore } from '@/store/complaintStore'
 import { useProjectStore } from '@/store/projectStore'
 import { useAuthStore } from '@/store/authStore'
-import { users as mockUsers } from '@/mock/users'
+import { useUserStore } from '@/store/userStore'
 import { cn } from '@/lib/utils'
 
 const complaintStatusConfig: Record<
@@ -21,6 +21,7 @@ export default function Complaints() {
   const { complaints, loadComplaints, addComplaint, getComplaintsByClient } =
     useComplaintStore()
   const { projects, loadProjects, getProjectsByClient } = useProjectStore()
+  const { loadUsers, getUserById } = useUserStore()
   const [showModal, setShowModal] = useState(false)
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [reason, setReason] = useState('')
@@ -29,7 +30,8 @@ export default function Complaints() {
   useEffect(() => {
     loadComplaints()
     loadProjects()
-  }, [loadComplaints, loadProjects])
+    loadUsers()
+  }, [loadComplaints, loadProjects, loadUsers])
 
   const clientComplaints = currentUser
     ? getComplaintsByClient(currentUser.id)
@@ -45,7 +47,7 @@ export default function Complaints() {
   }
 
   const getUserName = (userId: string) => {
-    const u = mockUsers.find((u) => u.id === userId)
+    const u = getUserById(userId)
     return u?.name ?? userId
   }
 
@@ -173,6 +175,16 @@ export default function Complaints() {
                                   complaint.resolvedAt
                                 ).toLocaleString('zh-CN')}
                               </span>
+                            </div>
+                          )}
+                          {complaint.resolutionNote && (
+                            <div className="text-xs mt-2">
+                              <span className="text-gray-500">处理结论：</span>
+                              <div className="bg-white/5 rounded-lg p-2.5 mt-1">
+                                <p className="text-gray-300 whitespace-pre-wrap">
+                                  {complaint.resolutionNote}
+                                </p>
+                              </div>
                             </div>
                           )}
                         </>

@@ -1,5 +1,13 @@
 export type UserRole = 'admin' | 'manager' | 'annotator' | 'client' | 'reviewer'
 
+export interface CreditHistoryItem {
+  id: string
+  change: number
+  reason: string
+  relatedComplaintId?: string
+  createdAt: string
+}
+
 export interface User {
   id: string
   name: string
@@ -9,9 +17,19 @@ export interface User {
   creditScore?: number
   skills?: string[]
   currentTaskCount?: number
+  creditHistory?: CreditHistoryItem[]
 }
 
 export type ProjectStatus = 'active' | 'completed' | 'paused' | 'reviewing' | 'draft'
+
+export interface DatasetDelivery {
+  id: string
+  format: 'json' | 'csv' | 'xml'
+  dataCount: number
+  generatedAt: string
+  generatedBy?: string
+  fileSizeKB: number
+}
 
 export interface Project {
   id: string
@@ -28,6 +46,7 @@ export interface Project {
   completedCount: number
   accuracyRate: number
   uploadedFiles?: Array<{name: string, size: number, dataCount: number, type: string}>
+  deliveries?: DatasetDelivery[]
 }
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'rejected' | 'submitted' | 'reviewing' | 'approved'
@@ -53,6 +72,8 @@ export interface Task {
   accuracyRate?: number
   rejectReason?: string
   notes?: string
+  reworkCount?: number
+  everRejected?: boolean
 }
 
 export type NotificationType = 'task_assigned' | 'task_submitted' | 'quality_alert' | 'complaint' | 'report_ready'
@@ -77,6 +98,7 @@ export interface Complaint {
   status: ComplaintStatus
   responsibleParty?: string
   creditAdjustment?: number
+  resolutionNote?: string
   createdAt: string
   resolvedAt?: string
 }

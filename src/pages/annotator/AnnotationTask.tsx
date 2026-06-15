@@ -23,6 +23,7 @@ import { useProjectStore } from "@/store/projectStore"
 import DataTypeInfo from "@/components/DataTypeInfo"
 import PriorityBadge from "@/components/PriorityBadge"
 import { cn } from "@/lib/utils"
+import type { Task } from "@/types"
 import type { DataItem } from "@/types"
 
 const textLabels = ["正面", "负面", "中性"]
@@ -684,12 +685,14 @@ export default function AnnotationTask() {
     if (!taskId) return
     setSubmitting(true)
     setTimeout(() => {
-      updateTask(taskId, {
+      const patch: Partial<Task> = {
         status: "submitted",
         submittedAt: new Date().toISOString(),
         dataItems: deepClone(localDataItems),
         notes,
-      })
+        rejectReason: undefined,
+      }
+      updateTask(taskId, patch)
       setSubmitting(false)
       navigate("/annotator")
     }, 800)

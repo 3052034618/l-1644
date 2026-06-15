@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Users, ArrowUpDown, X, Plus, Pencil } from 'lucide-react'
+import { Users, ArrowUpDown, X, Plus, Pencil, History, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { useUserStore } from '@/store/userStore'
+import { useTaskStore } from '@/store/taskStore'
 import { cn } from '@/lib/utils'
 import type { User, UserRole } from '@/types'
 
@@ -23,32 +25,47 @@ const roleLabels: Record<string, string> = {
 }
 
 export default function MemberManagement() {
-  const [members, setMembers] = useState<User[]>([])
+  const { users, loadUsers, getAnnotatorsAndReviewers, updateUser } = useUserStore()
+  const { tasks, loadTasks } = useTaskStore()
   const [roleFilter, setRoleFilter] = useState<'all' | 'annotator' | 'reviewer'>('all')
   const [sortField, setSortField] = useState<SortField>('creditScore')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editSkills, setEditSkills] = useState<string[]>([])
   const [newSkill, setNewSkill] = useState('')
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    import('@/mock').then(({ users }) => {
-      setMembers(
-        users.filter((u) => u.role === 'annotator' || u.role === 'reviewer')
+    loadUsers()
+    loadTasks()
+  }, [loadUsers, loadTasks])
+
+  const annotatorsAndReviewers = useMemo(() => getAnnotatorsAndReviewers(), [getAnnotatorsAndReviewers])
+
+  const memberAccuracy = useMemo(() => {
+    const map: Record<string, number> = { ...MEMBER_ACCURACY }
+    annotatorsAndReviewers.forEach((u) => {
+      const userTasks = tasks.filter(
+        (t) => (t.assigneeId === u.id || t.reviewerId === u.id) && t.accuracyRate !== undefined
       )
+      if (userTasks.length > 0) {
+        const avg = userTasks.reduce((s, t) => s + (t.accuracyRate ?? 0), 0) / userTasks.length
+        map[u.id] = avg
+      }
     })
-  }, [])
+    return map
+  }, [annotatorsAndReviewers, tasks])
 
   const filteredMembers = useMemo(() => {
-    let list = members
+    let list = annotatorsAndReviewers
     if (roleFilter !== 'all') {
       list = list.filter((m) => m.role === roleFilter)
     }
     return [...list].sort((a, b) => {
       let aVal: number, bVal: number
       if (sortField === 'accuracy') {
-        aVal = MEMBER_ACCURACY[a.id] ?? 0
-        bVal = MEMBER_ACCURACY[b.id] ?? 0
+        aVal = memberAccuracy[a.id] ?? 0
+        bVal = memberAccuracy[b.id] ?? 0
       } else if (sortField === 'currentTaskCount') {
         aVal = a.currentTaskCount ?? 0
         bVal = b.currentTaskCount ?? 0
@@ -58,7 +75,7 @@ export default function MemberManagement() {
       }
       return sortDir === 'desc' ? bVal - aVal : aVal - bVal
     })
-  }, [members, roleFilter, sortField, sortDir])
+  }, [annotatorsAndReviewers, roleFilter, sortField, sortDir, memberAccuracy])
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -89,11 +106,7 @@ export default function MemberManagement() {
 
   const saveSkills = () => {
     if (!editingUser) return
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.id === editingUser.id ? { ...m, skills: editSkills } : m
-      )
-    )
+    updateUser(editingUser.id, { skills: editSkills })
     setEditingUser(null)
   }
 
@@ -105,6 +118,8 @@ export default function MemberManagement() {
       )}
     />
   )
+
+  const formatCreditChange = (v: number) => v > 0 ? `+${v}` : `${v}`
 
   return (
     <div className="min-h-screen bg-primary p-6">
@@ -138,6 +153,7 @@ export default function MemberManagement() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/10">
+              <th className="text-left text-xs text-gray-400 font-medium px-4 py-3 w-8"></th>
               <th className="text-left text-xs text-gray-400 font-medium px-4 py-3">
                 成员
               </th>
@@ -181,91 +197,176 @@ export default function MemberManagement() {
           </thead>
           <tbody>
             {filteredMembers.map((member, index) => {
-              const accuracy = MEMBER_ACCURACY[member.id] ?? 0
+              const accuracy = memberAccuracy[member.id] ?? 0
+              const isExpanded = expandedUserId === member.id
+              const creditHistory = member.creditHistory ?? []
               return (
-                <motion.tr
-                  key={member.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                  className="border-b border-white/5 hover:bg-white/5 transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={member.avatar}
-                        alt=""
-                        className="w-8 h-8 rounded-full object-cover"
-                      />
-                      <div>
-                        <p className="text-sm font-medium">{member.name}</p>
-                        <p className="text-xs text-gray-500">{member.email}</p>
+                <>
+                  <motion.tr
+                    key={member.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.03 }}
+                    className="border-b border-white/5 hover:bg-white/5 transition-colors"
+                  >
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() =>
+                          setExpandedUserId(isExpanded ? null : member.id)
+                        }
+                        className="p-1 rounded hover:bg-white/10 transition-colors text-gray-500 hover:text-gray-300"
+                        title={isExpanded ? '收起信用分历史' : '查看信用分历史'}
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={member.avatar}
+                          alt=""
+                          className="w-8 h-8 rounded-full object-cover"
+                        />
+                        <div>
+                          <p className="text-sm font-medium">{member.name}</p>
+                          <p className="text-xs text-gray-500">{member.email}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={cn(
-                        'text-xs px-2 py-0.5 rounded-full',
-                        member.role === 'annotator'
-                          ? 'bg-blue-500/15 text-blue-400'
-                          : 'bg-purple-500/15 text-purple-400'
-                      )}
-                    >
-                      {roleLabels[member.role] ?? member.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(member.skills ?? []).map((skill) => (
-                        <span
-                          key={skill}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-primary-accent/10 text-primary-accent"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-sm font-heading">
-                      {member.currentTaskCount ?? 0}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={cn(
-                        'text-sm font-heading font-semibold',
-                        (member.creditScore ?? 0) >= 85
-                          ? 'text-success'
-                          : (member.creditScore ?? 0) >= 70
-                            ? 'text-warning'
-                            : 'text-error'
-                      )}
-                    >
-                      {member.creditScore ?? '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={cn(
-                        'text-sm font-heading font-semibold',
-                        accuracy >= 0.85 ? 'text-success' : 'text-error'
-                      )}
-                    >
-                      {(accuracy * 100).toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => openSkillEditor(member)}
-                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-accent transition-colors"
-                    >
-                      <Pencil className="h-3 w-3" />
-                      编辑技能
-                    </button>
-                  </td>
-                </motion.tr>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'text-xs px-2 py-0.5 rounded-full',
+                          member.role === 'annotator'
+                            ? 'bg-blue-500/15 text-blue-400'
+                            : 'bg-purple-500/15 text-purple-400'
+                        )}
+                      >
+                        {roleLabels[member.role] ?? member.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(member.skills ?? []).map((skill) => (
+                          <span
+                            key={skill}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-primary-accent/10 text-primary-accent"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-heading">
+                        {member.currentTaskCount ?? 0}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'text-sm font-heading font-semibold',
+                          (member.creditScore ?? 0) >= 85
+                            ? 'text-success'
+                            : (member.creditScore ?? 0) >= 70
+                              ? 'text-warning'
+                              : 'text-error'
+                        )}
+                      >
+                        {member.creditScore ?? '-'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'text-sm font-heading font-semibold',
+                          accuracy >= 0.85 ? 'text-success' : 'text-error'
+                        )}
+                      >
+                        {(accuracy * 100).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => openSkillEditor(member)}
+                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-accent transition-colors"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        编辑技能
+                      </button>
+                    </td>
+                  </motion.tr>
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.tr
+                        key={`${member.id}-history`}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="bg-white/[0.02]"
+                      >
+                        <td colSpan={8} className="px-4 py-3">
+                          <div className="pl-10">
+                            <div className="flex items-center gap-2 mb-2">
+                              <History className="h-3.5 w-3.5 text-primary-accent" />
+                              <span className="text-xs font-semibold text-gray-300">
+                                信用分变化历史
+                              </span>
+                            </div>
+                            {creditHistory.length === 0 ? (
+                              <p className="text-xs text-gray-600">暂无记录</p>
+                            ) : (
+                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-2">
+                                {[...creditHistory]
+                                  .sort(
+                                    (a, b) =>
+                                      new Date(b.createdAt).getTime() -
+                                      new Date(a.createdAt).getTime()
+                                  )
+                                  .map((item) => (
+                                    <div
+                                      key={item.id}
+                                      className="flex items-start justify-between gap-4 text-xs bg-white/5 rounded-lg px-3 py-2"
+                                    >
+                                      <div className="flex-1">
+                                        <p className="text-gray-300">{item.reason}</p>
+                                        {item.relatedComplaintId && (
+                                          <p className="text-[10px] text-gray-600 mt-0.5 font-mono">
+                                            关联投诉：{item.relatedComplaintId.toUpperCase()}
+                                          </p>
+                                        )}
+                                        <p className="text-[10px] text-gray-600 mt-0.5">
+                                          {new Date(
+                                            item.createdAt
+                                          ).toLocaleString('zh-CN')}
+                                        </p>
+                                      </div>
+                                      <span
+                                        className={cn(
+                                          'font-heading font-semibold shrink-0',
+                                          item.change > 0
+                                            ? 'text-success'
+                                            : item.change < 0
+                                              ? 'text-error'
+                                              : 'text-gray-400'
+                                        )}
+                                      >
+                                        {formatCreditChange(item.change)}
+                                      </span>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </motion.tr>
+                    )}
+                  </AnimatePresence>
+                </>
               )
             })}
           </tbody>

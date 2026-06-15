@@ -213,7 +213,7 @@ export default function CreateProject() {
       clientId: currentUser?.id ?? '',
       dataType,
       status: projectStatus as 'draft' | 'active' | 'reviewing' | 'completed',
-      specification: specification || recommendedTemplates[0]?.spec || '按标准流程标注',
+      specification: specification || recommendedTemplates[0]?.description || '按标准流程标注',
       templateId: templateToUse,
       createdAt: new Date().toISOString(),
       deadline: new Date(deadline).toISOString(),
